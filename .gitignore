@@ -1,0 +1,15 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Data / models (large files — keep out of git)
+backend/data/
+
+# OS
+.DS_Store
