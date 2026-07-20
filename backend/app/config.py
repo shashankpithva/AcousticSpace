@@ -49,6 +49,10 @@ class Paths:
     def features(self) -> Path:
         return self.data / "features"
 
+    @property
+    def models(self) -> Path:
+        return self.root / "models"
+
 
 AUDIO = AudioConfig()
 PATHS = Paths()

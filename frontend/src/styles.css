@@ -148,3 +148,27 @@ body {
 @media (max-width: 760px) {
   .grid { grid-template-columns: 1fr; }
 }
+
+/* --- Week 2: waveform controls --- */
+.wave-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.wave-controls .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.wave-controls .time {
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--muted);
+}
+.wave-controls .zoom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: auto;
+}
+.wave-controls .zoom input { accent-color: var(--accent); }

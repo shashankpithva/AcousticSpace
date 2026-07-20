@@ -5,4 +5,7 @@ data/uploads/
 data/dataset/
 data/features/
 *.npz
+models/*.pt
+models/*.png
+models/metrics.json
 .DS_Store

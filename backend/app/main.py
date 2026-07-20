@@ -1,10 +1,9 @@
-"""AcousticSpace FastAPI server (Week 1).
+"""AcousticSpace FastAPI server (Week 1 + Week 2).
 
-Endpoints:
-  GET  /health   -> liveness + config echo
-  POST /analyze  -> upload an audio file, run the real feature pipeline,
-                    return extracted features + a clearly-labeled placeholder
-                    prediction (no trained model until Week 2+).
+Week 2 adds baseline model inference: if a trained checkpoint exists under
+backend/models/, /analyze returns a real real-vs-deepfake prediction. If not,
+it falls back to the Week 1 feature-only 'undetermined' response so the API
+keeps working before the model is trained.
 """
 from __future__ import annotations
 
@@ -32,13 +31,31 @@ app = FastAPI(
     version=__version__,
 )
 
-# Allow the Vite dev server to call the API during development.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Loaded lazily on startup; stays None if torch / a checkpoint is unavailable.
+_predictor = None
+
+
+@app.on_event("startup")
+def _load_model() -> None:
+    global _predictor
+    try:
+        from ml.infer import get_predictor
+
+        _predictor = get_predictor()
+        if _predictor is not None:
+            print(f"[startup] baseline model loaded (val_acc={_predictor.val_acc}).")
+        else:
+            print("[startup] no trained checkpoint found — feature-only mode.")
+    except Exception as exc:  # noqa: BLE001
+        _predictor = None
+        print(f"[startup] model load skipped ({exc}) — feature-only mode.")
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -60,15 +77,14 @@ async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
             detail=f"Unsupported file type '{ext}'. Allowed: {sorted(ALLOWED_EXTENSIONS)}",
         )
 
-    # Persist the upload to a temp file so librosa/soundfile can read it.
     with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
         shutil.copyfileobj(file.file, tmp)
         tmp_path = Path(tmp.name)
 
     try:
-        y = preprocess(tmp_path)
-        feats = extract_all(y)
-    except Exception as exc:  # noqa: BLE001 - surface a clean 422 to the client
+        waveform = preprocess(tmp_path)
+        feats = extract_all(waveform)
+    except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=422, detail=f"Could not process audio: {exc}")
     finally:
         tmp_path.unlink(missing_ok=True)
@@ -76,22 +92,34 @@ async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
     reverb = ReverbFeatures(**feats["reverb"])
     mel = feats["mel_spectrogram"]
 
-    # NOTE: No trained classifier yet (arrives Week 2 baseline / Week 3 AST).
-    # We return an honest 'undetermined' verdict so the UI can be built and
-    # tested end-to-end against a real response shape.
+    if _predictor is not None:
+        out = _predictor.predict(waveform)
+        prediction = str(out["prediction"])
+        confidence = float(out["confidence"])
+        model_stage = "week2-baseline-cnn"
+        notes = (
+            "Week 2 baseline CNN prediction from Mel-spectrogram features. "
+            "Key indicators (RIR mismatch, breathing, cadence) arrive in Week 3."
+        )
+    else:
+        prediction = "undetermined"
+        confidence = 0.0
+        model_stage = "week1-feature-extraction-only"
+        notes = (
+            "No trained model found. Train the baseline "
+            "(see backend/ml/README.md) to enable predictions."
+        )
+
     return AnalyzeResponse(
         filename=file.filename or "unknown",
         duration_s=float(feats["duration_s"]),
-        prediction="undetermined",
-        confidence=0.0,
-        model_stage="week1-feature-extraction-only",
+        prediction=prediction,
+        confidence=confidence,
+        model_stage=model_stage,
         reverb=reverb,
-        key_indicators=KeyIndicators(),  # all 'unknown' until the model exists
+        key_indicators=KeyIndicators(),  # 'unknown' until Week 3
         mel_shape=list(mel.shape),
-        notes=(
-            "Week 1 build: real RIR/reverb + spectrogram features extracted. "
-            "Classification is not active yet — baseline model lands in Week 2."
-        ),
+        notes=notes,
     )
 
 
