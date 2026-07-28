@@ -19,6 +19,8 @@ from . import __version__
 from .audio_pipeline import preprocess
 from .config import ALLOWED_EXTENSIONS, AUDIO
 from .features import extract_all
+from .model import AudioCNN, predict
+import torch
 from .schemas import (
     AnalyzeResponse,
     HealthResponse,
@@ -31,6 +33,18 @@ app = FastAPI(
     description="Deepfake audio detection via Room Impulse Response (RIR).",
     version=__version__,
 )
+MODEL_PATH = Path("models/baseline_cnn.pt")
+
+model = AudioCNN()
+
+if MODEL_PATH.exists():
+    model.load_state_dict(
+        torch.load(
+            MODEL_PATH,
+            map_location="cpu"
+        )
+    )
+    model.eval()
 
 # Allow the Vite dev server to call the API during development.
 app.add_middleware(
@@ -79,19 +93,21 @@ async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
     # NOTE: No trained classifier yet (arrives Week 2 baseline / Week 3 AST).
     # We return an honest 'undetermined' verdict so the UI can be built and
     # tested end-to-end against a real response shape.
+    prediction, confidence = predict(
+        model,
+        feats["mel_spectrogram"]
+    )
+
     return AnalyzeResponse(
         filename=file.filename or "unknown",
         duration_s=float(feats["duration_s"]),
-        prediction="undetermined",
-        confidence=0.0,
-        model_stage="week1-feature-extraction-only",
+        prediction=prediction,
+        confidence=confidence,
+        model_stage="week2-cnn-baseline",
         reverb=reverb,
-        key_indicators=KeyIndicators(),  # all 'unknown' until the model exists
+        key_indicators=KeyIndicators(),
         mel_shape=list(mel.shape),
-        notes=(
-            "Week 1 build: real RIR/reverb + spectrogram features extracted. "
-            "Classification is not active yet — baseline model lands in Week 2."
-        ),
+        notes="Week 2 build: CNN baseline model prediction active.",
     )
 
 
