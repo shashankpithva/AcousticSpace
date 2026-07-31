@@ -1,71 +1,140 @@
 """
-Week 2 baseline CNN classifier for AcousticSpace.
-
-Input:
-    Mel spectrogram (n_mels, frames)
-
-Output:
-    2 classes:
-      0 -> real
-      1 -> fake
+AcousticSpace FastAPI Server - Week 3
 """
 
 from __future__ import annotations
 
-import torch
-import torch.nn as nn
+import shutil
+import tempfile
+from pathlib import Path
+
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+
+from . import __version__
+from .audio_pipeline import preprocess
+from .ast_predict import predict_audio
+from .breathing import analyze_breathing
+from .segments import find_suspicious_segments
+from .config import ALLOWED_EXTENSIONS, AUDIO
+from .features import extract_all
+from .schemas import (
+    AnalyzeResponse,
+    HealthResponse,
+    KeyIndicators,
+    ReverbFeatures,
+)
+
+app = FastAPI(
+    title="AcousticSpace API",
+    description="Deepfake Audio Detection using AST",
+    version=__version__,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
-class AudioCNN(nn.Module):
-    def __init__(self, n_classes: int = 2):
-        super().__init__()
+@app.get("/")
+def root():
 
-        self.features = nn.Sequential(
-            nn.Conv2d(1, 16, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2),
+    return {
+        "message": "AcousticSpace API is running!"
+    }
 
-            nn.Conv2d(16, 32, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2),
 
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d((8, 8)),
+@app.get("/health", response_model=HealthResponse)
+def health():
+
+    return HealthResponse(
+        status="ok",
+        service="acousticspace",
+        version=__version__,
+        sample_rate=AUDIO.sample_rate,
+    )
+
+
+@app.post("/analyze", response_model=AnalyzeResponse)
+async def analyze(file: UploadFile = File(...)):
+
+    ext = Path(file.filename or "").suffix.lower()
+
+    if ext not in ALLOWED_EXTENSIONS:
+
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type: {ext}",
         )
 
-        self.classifier = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(64 * 8 * 8, 128),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(128, n_classes),
+    with tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=ext,
+    ) as tmp:
+
+        shutil.copyfileobj(file.file, tmp)
+
+        tmp_path = Path(tmp.name)
+
+    try:
+
+        y = preprocess(tmp_path)
+
+        feats = extract_all(y)
+
+        reverb = ReverbFeatures(
+            **feats["reverb"]
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.features(x)
-        return self.classifier(x)
+        prediction = predict_audio(tmp_path)
 
+        breathing = analyze_breathing(tmp_path)
 
-def predict(model: AudioCNN, mel):
-    """
-    Convert one mel spectrogram into a prediction.
+        segments = find_suspicious_segments(tmp_path)
 
-    Returns:
-        label, confidence
-    """
+        return AnalyzeResponse(
 
-    model.eval()
+            filename=file.filename or "unknown",
 
-    with torch.no_grad():
-        tensor = torch.tensor(mel, dtype=torch.float32)
-        tensor = tensor.unsqueeze(0).unsqueeze(0)
+            duration_s=float(feats["duration_s"]),
 
-        logits = model(tensor)
-        probs = torch.softmax(logits, dim=1)
+            prediction=prediction["prediction"],
 
-        confidence, index = torch.max(probs, dim=1)
+            confidence=prediction["confidence"],
 
-    labels = ["real", "fake"]
+            model_stage="week3-ast",
 
-    return labels[index.item()], float(confidence.item())
+            reverb=reverb,
+
+            key_indicators=KeyIndicators(
+                breathing_pattern=breathing["pattern"],
+            ),
+
+            mel_shape=list(
+                feats["mel_spectrogram"].shape
+            ),
+
+            suspicious_segments=segments,
+
+            notes="Week 3 AST model + breathing analysis + suspicious segment detection.",
+        )
+
+    except Exception as exc:
+
+        raise HTTPException(
+            status_code=422,
+            detail=f"Could not process audio: {exc}",
+        )
+
+    finally:
+
+        tmp_path.unlink(
+            missing_ok=True,
+        )

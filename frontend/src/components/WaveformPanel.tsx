@@ -5,41 +5,62 @@ interface Props {
   audioUrl: string | null
 }
 
-// Renders the uploaded track as an interactive waveform using Wavesurfer.js.
-// (Wavesurfer integration is a Week 2 item; the wiring is scaffolded here.)
 export default function WaveformPanel({ audioUrl }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const wsRef = useRef<WaveSurfer | null>(null)
+
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const wavesurferRef = useRef<WaveSurfer | null>(null)
 
   useEffect(() => {
+
     if (!containerRef.current || !audioUrl) return
 
-    wsRef.current?.destroy()
-    const ws = WaveSurfer.create({
+    wavesurferRef.current = WaveSurfer.create({
       container: containerRef.current,
-      waveColor: "#7c9cff",
-      progressColor: "#3b5bdb",
-      height: 96,
-      cursorColor: "#1c2b57",
+      height: 120,
+      waveColor: "#4f46e5",
+      progressColor: "#ef4444",
+      cursorColor: "#111827",
+      barWidth: 3,
+      responsive: true,
     })
-    ws.load(audioUrl)
-    wsRef.current = ws
+
+    wavesurferRef.current.load(audioUrl)
+
 
     return () => {
-      ws.destroy()
-      wsRef.current = null
+      wavesurferRef.current?.destroy()
     }
+
   }, [audioUrl])
 
+
+  function togglePlay(){
+
+    wavesurferRef.current?.playPause()
+
+  }
+
+
+  if (!audioUrl) {
+    return (
+      <p className="muted">
+        Upload audio to view waveform
+      </p>
+    )
+  }
+
+
   return (
-    <div className="waveform">
-      {!audioUrl && <p className="muted">Upload a clip to see its waveform.</p>}
-      <div ref={containerRef} />
-      {audioUrl && (
-        <button className="btn" onClick={() => wsRef.current?.playPause()}>
-          ▶️ Play / Pause
-        </button>
-      )}
+
+    <div>
+
+      <div ref={containerRef}></div>
+
+      <button onClick={togglePlay}>
+        ▶️ Play / Pause
+      </button>
+
     </div>
+
   )
 }

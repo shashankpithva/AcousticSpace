@@ -148,3 +148,138 @@ body {
 @media (max-width: 760px) {
   .grid { grid-template-columns: 1fr; }
 }
+.confidence-bar {
+
+  height:18px;
+  background:#ddd;
+  border-radius:10px;
+  overflow:hidden;
+  margin:15px 0;
+
+}
+
+
+.confidence-fill {
+
+  height:100%;
+  background:#e53935;
+
+}
+
+
+
+.feature-grid {
+
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  gap:12px;
+
+}
+
+
+.feature-card {
+
+  padding:12px;
+  border-radius:10px;
+  background:#f2f2f2;
+  display:flex;
+  flex-direction:column;
+
+}
+
+
+
+.segment {
+
+  margin-top:15px;
+
+}
+
+
+
+.segment-bar {
+
+  height:14px;
+  background:#ddd;
+  border-radius:10px;
+  overflow:hidden;
+
+}
+
+
+
+.segment-fill {
+
+  height:100%;
+  background:red;
+
+}
+.segments {
+  margin-top:20px;
+}
+
+.segment {
+  margin-bottom:20px;
+}
+
+.bar {
+  height:12px;
+  background:#ddd;
+  border-radius:10px;
+  overflow:hidden;
+  margin:8px 0;
+}
+
+.fill {
+  height:100%;
+  background:red;
+}
+.timeline-row {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin:12px 0;
+}
+
+.time {
+  width:80px;
+}
+
+.bar {
+  flex:1;
+  height:14px;
+  background:#ddd;
+  border-radius:10px;
+  overflow:hidden;
+}
+
+.fill {
+  height:100%;
+  background:#ef4444;
+  border-radius:10px;
+}
+
+.timeline-row span {
+  width:80px;
+}
+.attention {
+ display:flex;
+ gap:10px;
+ margin-top:20px;
+}
+
+
+.attention-box {
+
+ width:70px;
+ height:70px;
+ background:#ef4444;
+ color:white;
+ display:flex;
+ align-items:center;
+ justify-content:center;
+ text-align:center;
+ border-radius:8px;
+ font-weight:bold;
+
+}
