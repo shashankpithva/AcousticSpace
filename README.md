@@ -96,6 +96,37 @@ python scripts/extract_features.py --dataset data/dataset --out data/features
 
 > ⚠️ Week 1 intentionally has **no trained model yet**. `/analyze` runs the real feature pipeline and returns extracted feature summaries with a clearly-labeled placeholder prediction. The actual classifier arrives in Week 2 (baseline) and Week 3 (fine-tuned AST).
 
+---
+
+## 📅 Week 2 — Baseline Model (DONE)
+
+**Backend & ML**
+- [x] `BaselineCNN` — CNN classifier on Mel-spectrogram features (`backend/ml/model.py`)
+- [x] PyTorch dataset + stratified train/val split over cached `.npz` (`backend/ml/dataset.py`)
+- [x] Training loop with metrics logging + best-checkpoint saving (`backend/ml/train.py`)
+- [x] Evaluation: accuracy, precision/recall/F1, confusion matrix, EER (`backend/ml/evaluate.py`)
+- [x] First real deepfake prediction wired into `/analyze` (`backend/ml/infer.py` + `app/main.py`)
+- [x] Synthetic smoke-test dataset generator (`backend/scripts/make_dummy_dataset.py`)
+
+**Frontend**
+- [x] Full Wavesurfer.js waveform + timeline (`frontend/src/components/WaveformPanel.tsx`)
+- [x] Audio playback controls, live time readout, loading state, zoom
+
+### Run Week 2 (from `backend/`)
+
+```bash
+# quick smoke test without downloading ASVspoof:
+python scripts/make_dummy_dataset.py --out data/dataset --n 40
+python scripts/extract_features.py --dataset data/dataset --out data/features
+python -m ml.train --features data/features --epochs 10
+python -m ml.evaluate --features data/features
+
+# then restart the API so it picks up models/baseline_cnn.pt
+uvicorn app.main:app --reload --port 8000
+```
+
+After training, `/analyze` returns `authentic` / `deepfake` + a confidence score
+instead of `undetermined`. See `backend/ml/README.md` for full details.
 
 # AcousticSpace — Week 2
 
