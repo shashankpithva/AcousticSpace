@@ -13,3 +13,4 @@ backend/data/
 
 # OS
 .DS_Store
+backend/models/*.pt
