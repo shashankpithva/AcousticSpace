@@ -49,3 +49,27 @@ export async function checkHealth(): Promise<boolean> {
     return false
   }
 }
+export async function getAttention(file: File) {
+
+  const form = new FormData()
+  form.append("file", file)
+
+
+  const res = await fetch(
+    "http://127.0.0.1:8000/attention",
+    {
+      method: "POST",
+      body: form,
+    }
+  )
+
+
+  if (!res.ok) {
+    throw new Error("Attention analysis failed")
+  }
+
+
+  return await res.json() as {
+    attention: number[]
+  }
+}

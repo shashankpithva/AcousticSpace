@@ -1,6 +1,4 @@
-# AcousticSpace backend — dependencies
-
-# --- Week 1: API + audio/feature pipeline ---
+# AcousticSpace backend — Week 1 dependencies
 fastapi==0.115.5
 uvicorn[standard]==0.32.1
 python-multipart==0.0.17
@@ -10,10 +8,8 @@ scipy==1.13.1
 soundfile==0.12.1
 pydantic==2.9.2
 
-# --- Week 2: baseline model (CNN) ---
-torch==2.3.1
+# Week 2 baseline model
+torch==2.13.0
+torchvision==0.28.0
+torchaudio==2.11.0
 scikit-learn==1.5.1
-matplotlib==3.9.2
-
-# --- Week 3 (AST fine-tuning) — uncomment when you start ---
-# transformers==4.44.2

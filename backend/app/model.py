@@ -1,6 +1,5 @@
 """
 AcousticSpace FastAPI Server - Week 3
-AST + breathing + cadence alignment + suspicious segment detection
 """
 
 from __future__ import annotations
@@ -13,14 +12,12 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import __version__
-from .alignment import calculate_alignment
-from .ast_predict import predict_audio
 from .audio_pipeline import preprocess
+from .ast_predict import predict_audio
 from .breathing import analyze_breathing
-from .cadence import analyze_cadence
+from .segments import find_suspicious_segments
 from .config import ALLOWED_EXTENSIONS, AUDIO
 from .features import extract_all
-from .segments import find_suspicious_segments
 from .schemas import (
     AnalyzeResponse,
     HealthResponse,
@@ -28,13 +25,11 @@ from .schemas import (
     ReverbFeatures,
 )
 
-
 app = FastAPI(
     title="AcousticSpace API",
-    description="Deepfake audio detection using AST",
+    description="Deepfake Audio Detection using AST",
     version=__version__,
 )
-
 
 app.add_middleware(
     CORSMiddleware,
@@ -50,13 +45,15 @@ app.add_middleware(
 
 @app.get("/")
 def root():
+
     return {
-        "message": "AcousticSpace API is running"
+        "message": "AcousticSpace API is running!"
     }
 
 
 @app.get("/health", response_model=HealthResponse)
 def health():
+
     return HealthResponse(
         status="ok",
         service="acousticspace",
@@ -71,31 +68,24 @@ async def analyze(file: UploadFile = File(...)):
     ext = Path(file.filename or "").suffix.lower()
 
     if ext not in ALLOWED_EXTENSIONS:
+
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported file type: {ext}",
         )
-
-    tmp_path = None
 
     with tempfile.NamedTemporaryFile(
         delete=False,
         suffix=ext,
     ) as tmp:
 
-        shutil.copyfileobj(
-            file.file,
-            tmp,
-        )
+        shutil.copyfileobj(file.file, tmp)
 
         tmp_path = Path(tmp.name)
 
     try:
-        print("STEP 1: preprocess")
 
         y = preprocess(tmp_path)
-
-        print("STEP 2: features")
 
         feats = extract_all(y)
 
@@ -103,47 +93,17 @@ async def analyze(file: UploadFile = File(...)):
             **feats["reverb"]
         )
 
-        mel = feats["mel_spectrogram"]
+        prediction = predict_audio(tmp_path)
 
-        print("STEP 3: AST prediction")
+        breathing = analyze_breathing(tmp_path)
 
-        prediction = predict_audio(
-            tmp_path
-        )
-
-        print("STEP 4: breathing analysis")
-
-        breathing = analyze_breathing(
-            tmp_path
-        )
-
-        print("STEP 5: cadence analysis")
-
-        cadence = analyze_cadence(
-            tmp_path
-        )
-
-        print("STEP 6: breathing/cadence alignment")
-
-        alignment = calculate_alignment(
-            breathing,
-            cadence,
-        )
-
-        print("STEP 7: suspicious segments")
-
-        segments = find_suspicious_segments(
-            tmp_path
-        )
-
-        print("DONE")
+        segments = find_suspicious_segments(tmp_path)
 
         return AnalyzeResponse(
+
             filename=file.filename or "unknown",
 
-            duration_s=float(
-                feats["duration_s"]
-            ),
+            duration_s=float(feats["duration_s"]),
 
             prediction=prediction["prediction"],
 
@@ -155,37 +115,26 @@ async def analyze(file: UploadFile = File(...)):
 
             key_indicators=KeyIndicators(
                 breathing_pattern=breathing["pattern"],
-
-                vocal_cadence=cadence["pattern"],
-
-                breathing_cadence_alignment=alignment["alignment"],
-
-                breathing_cadence_score=alignment["alignment_score"],
             ),
 
             mel_shape=list(
-                mel.shape
+                feats["mel_spectrogram"].shape
             ),
 
             suspicious_segments=segments,
 
-            notes=(
-                "Week 3 AST model + breathing analysis + "
-                "vocal cadence + breathing/cadence alignment + "
-                "suspicious segment detection."
-            ),
+            notes="Week 3 AST model + breathing analysis + suspicious segment detection.",
         )
 
     except Exception as exc:
-        print("ERROR:", exc)
 
         raise HTTPException(
-            status_code=500,
-            detail=str(exc),
+            status_code=422,
+            detail=f"Could not process audio: {exc}",
         )
 
     finally:
-        if tmp_path is not None:
-            tmp_path.unlink(
-                missing_ok=True
-            )
+
+        tmp_path.unlink(
+            missing_ok=True,
+        )
