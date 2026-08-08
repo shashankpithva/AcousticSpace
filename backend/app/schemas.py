@@ -20,6 +20,16 @@ class KeyIndicators(BaseModel):
         "unknown",
         description="high | medium | low | unknown",
     )
+    breathing_cadence_alignment: str = Field(
+        "unknown",
+        description="good | moderate | poor | unknown",
+    )
+
+    breathing_cadence_score: float = Field(
+        0.0,
+        ge=0.0,
+        le=1.0,
+    )
 
     reverb_consistency: str = Field(
         "unknown",

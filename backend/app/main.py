@@ -1,10 +1,10 @@
 """
 AcousticSpace FastAPI Server - Week 3
-AST + breathing + suspicious segment detection
+AST + breathing + cadence alignment + suspicious segment detection
 """
 
 from __future__ import annotations
-from .attention import generate_attention
+
 import shutil
 import tempfile
 from pathlib import Path
@@ -13,13 +13,14 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import __version__
-from .audio_pipeline import preprocess
+from .alignment import calculate_alignment
 from .ast_predict import predict_audio
+from .audio_pipeline import preprocess
 from .breathing import analyze_breathing
+from .cadence import analyze_cadence
 from .config import ALLOWED_EXTENSIONS, AUDIO
 from .features import extract_all
 from .segments import find_suspicious_segments
-
 from .schemas import (
     AnalyzeResponse,
     HealthResponse,
@@ -49,23 +50,19 @@ app.add_middleware(
 
 @app.get("/")
 def root():
-
     return {
         "message": "AcousticSpace API is running"
     }
 
 
-
 @app.get("/health", response_model=HealthResponse)
 def health():
-
     return HealthResponse(
         status="ok",
         service="acousticspace",
         version=__version__,
         sample_rate=AUDIO.sample_rate,
     )
-
 
 
 @app.post("/analyze", response_model=AnalyzeResponse)
@@ -79,6 +76,7 @@ async def analyze(file: UploadFile = File(...)):
             detail=f"Unsupported file type: {ext}",
         )
 
+    tmp_path = None
 
     with tempfile.NamedTemporaryFile(
         delete=False,
@@ -87,58 +85,60 @@ async def analyze(file: UploadFile = File(...)):
 
         shutil.copyfileobj(
             file.file,
-            tmp
+            tmp,
         )
 
         tmp_path = Path(tmp.name)
 
-
     try:
-
-        print("STEP 1 preprocess")
+        print("STEP 1: preprocess")
 
         y = preprocess(tmp_path)
 
-
-        print("STEP 2 features")
+        print("STEP 2: features")
 
         feats = extract_all(y)
-
 
         reverb = ReverbFeatures(
             **feats["reverb"]
         )
 
-
         mel = feats["mel_spectrogram"]
 
-
-        print("STEP 3 AST")
+        print("STEP 3: AST prediction")
 
         prediction = predict_audio(
             tmp_path
         )
 
-
-        print("STEP 4 breathing")
+        print("STEP 4: breathing analysis")
 
         breathing = analyze_breathing(
             tmp_path
         )
 
+        print("STEP 5: cadence analysis")
 
-        print("STEP 5 segments")
+        cadence = analyze_cadence(
+            tmp_path
+        )
+
+        print("STEP 6: breathing/cadence alignment")
+
+        alignment = calculate_alignment(
+            breathing,
+            cadence,
+        )
+
+        print("STEP 7: suspicious segments")
 
         segments = find_suspicious_segments(
             tmp_path
         )
 
-
         print("DONE")
 
-
         return AnalyzeResponse(
-
             filename=file.filename or "unknown",
 
             duration_s=float(
@@ -153,44 +153,39 @@ async def analyze(file: UploadFile = File(...)):
 
             reverb=reverb,
 
-
             key_indicators=KeyIndicators(
+                breathing_pattern=breathing["pattern"],
 
-                breathing_pattern=
-                breathing["pattern"]
+                vocal_cadence=cadence["pattern"],
 
+                breathing_cadence_alignment=alignment["alignment"],
+
+                breathing_cadence_score=alignment["alignment_score"],
             ),
-
 
             mel_shape=list(
                 mel.shape
             ),
 
-
             suspicious_segments=segments,
 
-
-            notes=
-            "Week 3 AST model + breathing analysis + suspicious segment detection."
-
+            notes=(
+                "Week 3 AST model + breathing analysis + "
+                "vocal cadence + breathing/cadence alignment + "
+                "suspicious segment detection."
+            ),
         )
 
-
     except Exception as exc:
-
         print("ERROR:", exc)
 
         raise HTTPException(
-
             status_code=500,
-
-            detail=str(exc)
-
+            detail=str(exc),
         )
-
 
     finally:
-
-        tmp_path.unlink(
-            missing_ok=True
-        )
+        if tmp_path is not None:
+            tmp_path.unlink(
+                missing_ok=True
+            )
