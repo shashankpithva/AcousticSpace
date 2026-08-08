@@ -1,10 +1,8 @@
-"""AcousticSpace FastAPI server (Week 1 + Week 2).
-
-Week 2 adds baseline model inference: if a trained checkpoint exists under
-backend/models/, /analyze returns a real real-vs-deepfake prediction. If not,
-it falls back to the Week 1 feature-only 'undetermined' response so the API
-keeps working before the model is trained.
 """
+AcousticSpace FastAPI Server - Week 3
+AST + breathing + cadence alignment + suspicious segment detection
+"""
+
 from __future__ import annotations
 
 import shutil
@@ -15,9 +13,14 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import __version__
+from .alignment import calculate_alignment
+from .ast_predict import predict_audio
 from .audio_pipeline import preprocess
+from .breathing import analyze_breathing
+from .cadence import analyze_cadence
 from .config import ALLOWED_EXTENSIONS, AUDIO
 from .features import extract_all
+from .segments import find_suspicious_segments
 from .schemas import (
     AnalyzeResponse,
     HealthResponse,
@@ -25,41 +28,35 @@ from .schemas import (
     ReverbFeatures,
 )
 
+
 app = FastAPI(
     title="AcousticSpace API",
-    description="Deepfake audio detection via Room Impulse Response (RIR).",
+    description="Deepfake audio detection using AST",
     version=__version__,
 )
 
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Loaded lazily on startup; stays None if torch / a checkpoint is unavailable.
-_predictor = None
 
-
-@app.on_event("startup")
-def _load_model() -> None:
-    global _predictor
-    try:
-        from ml.infer import get_predictor
-
-        _predictor = get_predictor()
-        if _predictor is not None:
-            print(f"[startup] baseline model loaded (val_acc={_predictor.val_acc}).")
-        else:
-            print("[startup] no trained checkpoint found — feature-only mode.")
-    except Exception as exc:  # noqa: BLE001
-        _predictor = None
-        print(f"[startup] model load skipped ({exc}) — feature-only mode.")
+@app.get("/")
+def root():
+    return {
+        "message": "AcousticSpace API is running"
+    }
 
 
 @app.get("/health", response_model=HealthResponse)
-def health() -> HealthResponse:
+def health():
     return HealthResponse(
         status="ok",
         service="acousticspace",
@@ -69,60 +66,126 @@ def health() -> HealthResponse:
 
 
 @app.post("/analyze", response_model=AnalyzeResponse)
-async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
+async def analyze(file: UploadFile = File(...)):
+
     ext = Path(file.filename or "").suffix.lower()
+
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported file type '{ext}'. Allowed: {sorted(ALLOWED_EXTENSIONS)}",
+            detail=f"Unsupported file type: {ext}",
         )
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
-        shutil.copyfileobj(file.file, tmp)
+    tmp_path = None
+
+    with tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=ext,
+    ) as tmp:
+
+        shutil.copyfileobj(
+            file.file,
+            tmp,
+        )
+
         tmp_path = Path(tmp.name)
 
     try:
-        waveform = preprocess(tmp_path)
-        feats = extract_all(waveform)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=422, detail=f"Could not process audio: {exc}")
+        print("STEP 1: preprocess")
+
+        y = preprocess(tmp_path)
+
+        print("STEP 2: features")
+
+        feats = extract_all(y)
+
+        reverb = ReverbFeatures(
+            **feats["reverb"]
+        )
+
+        mel = feats["mel_spectrogram"]
+
+        print("STEP 3: AST prediction")
+
+        prediction = predict_audio(
+            tmp_path
+        )
+
+        print("STEP 4: breathing analysis")
+
+        breathing = analyze_breathing(
+            tmp_path
+        )
+
+        print("STEP 5: cadence analysis")
+
+        cadence = analyze_cadence(
+            tmp_path
+        )
+
+        print("STEP 6: breathing/cadence alignment")
+
+        alignment = calculate_alignment(
+            breathing,
+            cadence,
+        )
+
+        print("STEP 7: suspicious segments")
+
+        segments = find_suspicious_segments(
+            tmp_path
+        )
+
+        print("DONE")
+
+        return AnalyzeResponse(
+            filename=file.filename or "unknown",
+
+            duration_s=float(
+                feats["duration_s"]
+            ),
+
+            prediction=prediction["prediction"],
+
+            confidence=prediction["confidence"],
+
+            model_stage="week3-ast",
+
+            reverb=reverb,
+
+            key_indicators=KeyIndicators(
+                breathing_pattern=breathing["pattern"],
+
+                vocal_cadence=cadence["pattern"],
+
+                breathing_cadence_alignment=alignment["alignment"],
+
+                breathing_cadence_score=alignment["alignment_score"],
+            ),
+
+            mel_shape=list(
+                mel.shape
+            ),
+
+            suspicious_segments=segments,
+
+            notes=(
+                "Week 3 AST model + breathing analysis + "
+                "vocal cadence + breathing/cadence alignment + "
+                "suspicious segment detection."
+            ),
+        )
+
+    except Exception as exc:
+        print("ERROR:", exc)
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc),
+        )
+
     finally:
-        tmp_path.unlink(missing_ok=True)
-
-    reverb = ReverbFeatures(**feats["reverb"])
-    mel = feats["mel_spectrogram"]
-
-    if _predictor is not None:
-        out = _predictor.predict(waveform)
-        prediction = str(out["prediction"])
-        confidence = float(out["confidence"])
-        model_stage = "week2-baseline-cnn"
-        notes = (
-            "Week 2 baseline CNN prediction from Mel-spectrogram features. "
-            "Key indicators (RIR mismatch, breathing, cadence) arrive in Week 3."
-        )
-    else:
-        prediction = "undetermined"
-        confidence = 0.0
-        model_stage = "week1-feature-extraction-only"
-        notes = (
-            "No trained model found. Train the baseline "
-            "(see backend/ml/README.md) to enable predictions."
-        )
-
-    return AnalyzeResponse(
-        filename=file.filename or "unknown",
-        duration_s=float(feats["duration_s"]),
-        prediction=prediction,
-        confidence=confidence,
-        model_stage=model_stage,
-        reverb=reverb,
-        key_indicators=KeyIndicators(),  # 'unknown' until Week 3
-        mel_shape=list(mel.shape),
-        notes=notes,
-    )
-
-
-@app.get("/")
-def root() -> dict[str, str]:
-    return {"message": "AcousticSpace API. See /docs for the interactive API."}
+        if tmp_path is not None:
+            tmp_path.unlink(
+                missing_ok=True
+            )
